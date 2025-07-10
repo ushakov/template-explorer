@@ -7,7 +7,6 @@ export interface LLMConfig {
     provider?: string;
     model?: string;
     temperature?: number;
-    max_tokens?: number;
 }
 
 export interface ParserSpec {

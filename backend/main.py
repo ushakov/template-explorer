@@ -1,14 +1,15 @@
+import time
+import uuid
+import json
+from typing import List, Dict, Any, Literal
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from pydantic import BaseModel, Field
-from pathlib import Path
-import uuid
-from typing import List, Dict, Any
-import json
 from dotenv import load_dotenv
 import jinja2
+
 from llama_index.llms.openai import OpenAI
-from typing import Literal
-import time
 from llama_index.core.prompts import PromptTemplate
 
 load_dotenv()
@@ -34,16 +35,49 @@ class TemplateMeta(BaseModel):
     id: str = Field(..., description="Unique identifier for the template")
     name: str = Field(..., description="Display name for the template")
 
+
+class LLMConfig(BaseModel):
+    provider: str = "openai"
+    model: str = "o4-mini"
+    temperature: float = 0.7
+
+
+class ParserSpec(BaseModel):
+    type: Literal["raw", "structured", "python"] = "raw"
+    pydantic_model: str | None = None  # For 'structured'
+    python_code: str | None = None  # For 'python'
+
+
+class DataSourceBinding(BaseModel):
+    id: str  # Keep the UUID from the frontend to help with tracking
+    source_id: str
+    context_key: str
+    scope: Literal["record", "global"]
+    row: int | None = None
+
+
 class Template(TemplateMeta):
     content: str = Field(..., description="The template content (e.g., Jinja2 syntax)")
+    llm_config: LLMConfig = Field(default_factory=LLMConfig)
+    parser_spec: ParserSpec = Field(default_factory=ParserSpec)
+    bindings: List[DataSourceBinding] = Field(default_factory=list)
+
 
 class TemplateCreate(BaseModel):
     name: str
     content: str
+    llm_config: LLMConfig
+    parser_spec: ParserSpec
+    bindings: List[DataSourceBinding]
+
 
 class TemplateUpdate(BaseModel):
     name: str | None = None
     content: str | None = None
+    llm_config: LLMConfig | None = None
+    parser_spec: ParserSpec | None = None
+    bindings: List[DataSourceBinding] | None = None
+
 
 class DatasetMeta(BaseModel):
     id: str = Field(..., description="Unique identifier for the dataset")
@@ -51,23 +85,8 @@ class DatasetMeta(BaseModel):
     num_records: int | None = Field(None, description="Number of records in the dataset")
     file_format: str = Field(..., description="File format (json or jsonl)")
 
+
 # --- LLM & Runner Models ---
-
-class LLMConfig(BaseModel):
-    provider: str = "openai"
-    model: str = "gpt-3.5-turbo"
-    temperature: float = 0.7
-
-class ParserSpec(BaseModel):
-    type: Literal["raw", "structured", "python"] = "raw"
-    pydantic_model: str | None = None # For 'structured'
-    python_code: str | None = None # For 'python'
-
-class DataSourceBinding(BaseModel):
-    source_id: str
-    context_key: str
-    scope: Literal["record", "global"]
-    row: int | None = None
 
 class RunRequest(BaseModel):
     template_id: str | None = None
@@ -117,7 +136,7 @@ async def create_template(template_in: TemplateCreate):
     if "/" in template_name or "\\" in template_name:
         raise HTTPException(status_code=400, detail="Template name cannot contain slashes.")
 
-    file_path = TEMPLATES_DIR / f"{template_id}__{template_name}.jinja"
+    file_path = TEMPLATES_DIR / f"{template_id}__{template_name}.json"
 
     # Check for name collision
     for f in TEMPLATES_DIR.iterdir():
@@ -126,7 +145,8 @@ async def create_template(template_in: TemplateCreate):
 
     try:
         with open(file_path, "w") as f:
-            f.write(template_in.content)
+            template_data = template_in.model_dump()
+            json.dump(template_data, f, indent=2)
     except IOError as e:
         raise HTTPException(status_code=500, detail=f"Failed to write template to disk: {e}")
 
@@ -137,7 +157,7 @@ async def list_templates():
     """Lists all available templates."""
     templates = []
     for f in sorted(TEMPLATES_DIR.iterdir()):
-        if f.is_file() and f.suffix == '.jinja':
+        if f.is_file() and f.suffix == '.json':
             try:
                 template_id, template_name = f.stem.split('__', 1)
                 templates.append(TemplateMeta(id=template_id, name=template_name))
@@ -268,68 +288,71 @@ async def delete_dataset(dataset_id: str):
 def _find_template_file(template_id: str) -> Path | None:
     """Helper to find a template file by its ID."""
     for f in TEMPLATES_DIR.iterdir():
-        if f.is_file() and f.stem.startswith(f"{template_id}__"):
+        if f.is_file() and f.stem.startswith(f"{template_id}__") and f.suffix == '.json':
             return f
     return None
 
 @app.get("/templates/{template_id}", response_model=Template)
 async def get_template(template_id: str):
-    """Retrieves a single template, including its content."""
+    """Retrieves a full template, including content and metadata."""
     file_path = _find_template_file(template_id)
     if not file_path or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Template not found")
 
     try:
-        content = file_path.read_text()
-        _, template_name = file_path.stem.split('__', 1)
-        return Template(id=template_id, name=template_name, content=content)
-    except IOError:
-        raise HTTPException(status_code=500, detail="Could not read template file.")
-
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            return Template(id=template_id, **data)
+    except (IOError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read or parse template file: {e}")
 
 @app.put("/templates/{template_id}", response_model=Template)
 async def update_template(template_id: str, template_in: TemplateUpdate):
-    """Updates a template's name or content."""
+    """Updates an existing template."""
     file_path = _find_template_file(template_id)
     if not file_path or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Template not found")
 
-    current_name = file_path.stem.split('__', 1)[1]
-    new_name = template_in.name if template_in.name is not None else current_name
+    # Read existing data
+    try:
+        with open(file_path, "r") as f:
+            existing_data = json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read template file: {e}")
 
+    # Create a Template object from existing data to leverage Pydantic's update logic
+    existing_template = Template(id=template_id, **existing_data)
+
+    # Apply updates from the input model. `exclude_unset` ensures we only use provided values.
+    update_data = template_in.model_dump(exclude_unset=True)
+    updated_template = existing_template.model_copy(update=update_data)
+
+    # The name might have changed, which affects the filename
+    new_name = updated_template.name
     if "/" in new_name or "\\" in new_name:
         raise HTTPException(status_code=400, detail="Template name cannot contain slashes.")
 
-    # Handle rename
-    new_file_path = file_path
-    if template_in.name is not None and template_in.name != current_name:
-        # Check for name collision
-        for f in TEMPLATES_DIR.iterdir():
-            if f.is_file() and f.stem.split('__', 1)[1] == template_in.name:
-                raise HTTPException(status_code=409, detail=f"A template with name '{template_in.name}' already exists.")
-        new_file_path = TEMPLATES_DIR / f"{template_id}__{template_in.name}.jinja"
-        try:
-            file_path.rename(new_file_path)
-        except IOError as e:
-            raise HTTPException(status_code=500, detail=f"Failed to rename template file: {e}")
+    new_file_path = TEMPLATES_DIR / f"{template_id}__{new_name}.json"
 
-    # Handle content update
-    if template_in.content is not None:
-        try:
-            new_file_path.write_text(template_in.content)
-        except IOError as e:
-            raise HTTPException(status_code=500, detail=f"Failed to write updated content: {e}")
+    # Write the updated data back
+    try:
+        with open(new_file_path, "w") as f:
+            json.dump(updated_template.model_dump(exclude={"id"}), f, indent=2)
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write updated template: {e}")
 
-    updated_content = new_file_path.read_text()
-    return Template(id=template_id, name=new_name, content=updated_content)
+    # If the name changed, remove the old file
+    if file_path != new_file_path:
+        file_path.unlink()
 
+    return updated_template
 
 @app.delete("/templates/{template_id}", status_code=204)
 async def delete_template(template_id: str):
-    """Deletes a template from the filesystem."""
+    """Deletes a template."""
     file_path = _find_template_file(template_id)
     if not file_path or not file_path.is_file():
-        return # Already gone
+        raise HTTPException(status_code=404, detail="Template not found")
 
     try:
         file_path.unlink()

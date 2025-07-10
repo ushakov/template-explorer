@@ -92,7 +92,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     provider: "openai",
     model: "gpt-3.5-turbo",
     temperature: 0.7,
-    max_tokens: 1024,
   },
   parserSpec: {
     type: "raw",
@@ -123,7 +122,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       set({ isLoading: true, error: null, selectedTemplateId: id, unsavedTemplate: '' });
       const template = await templateApi.getTemplate(id);
-      set({ selectedTemplate: template, isLoading: false, unsavedTemplate: template.content });
+      set({
+        selectedTemplate: template,
+        isLoading: false,
+        unsavedTemplate: template.content,
+        llmConfig: template.llm_config,
+        parserSpec: template.parser_spec,
+        bindings: template.bindings,
+      });
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Failed to fetch template';
       set({ error, isLoading: false, selectedTemplate: null, unsavedTemplate: '' });
@@ -131,18 +137,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   createTemplate: async (name: string, content: string) => {
-    const newTemplate = await templateApi.createTemplate({ name, content });
+    const { llmConfig, parserSpec, bindings } = get();
+    const newTemplate = await templateApi.createTemplate({ name, content, llm_config: llmConfig, parser_spec: parserSpec, bindings });
     await get().fetchTemplates();
     await get().selectTemplate(newTemplate.id);
     return newTemplate;
   },
 
   updateSelectedTemplate: async (name?: string, content?: string) => {
-    const { selectedTemplateId } = get();
+    const { selectedTemplateId, llmConfig, parserSpec, bindings, selectedTemplate } = get();
     if (!selectedTemplateId) return;
 
     try {
-      const updatedTemplate = await templateApi.updateTemplate(selectedTemplateId, { name, content });
+      // Preserve existing name/content if not provided
+      const newName = name ?? selectedTemplate?.name;
+      const newContent = content ?? selectedTemplate?.content;
+
+      const updatedTemplate = await templateApi.updateTemplate(selectedTemplateId, {
+        name: newName,
+        content: newContent,
+        llm_config: llmConfig,
+        parser_spec: parserSpec,
+        bindings: bindings,
+      });
       set({ selectedTemplate: updatedTemplate, unsavedTemplate: updatedTemplate.content });
       await get().fetchTemplates();
     } catch (err) {

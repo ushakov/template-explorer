@@ -1,4 +1,6 @@
 import axios from 'axios';
+import type { LLMConfig, ParserSpec } from './llm';
+import type { DataSourceBinding } from '../stores/appStore';
 
 const API_URL = '/api'; // Using Vite's proxy
 
@@ -9,16 +11,25 @@ export interface TemplateMeta {
 
 export interface Template extends TemplateMeta {
   content: string;
+  llm_config: LLMConfig;
+  parser_spec: ParserSpec;
+  bindings: DataSourceBinding[];
 }
 
 export interface TemplateCreate {
   name: string;
   content: string;
+  llm_config: LLMConfig;
+  parser_spec: ParserSpec;
+  bindings: DataSourceBinding[];
 }
 
 export interface TemplateUpdate {
   name?: string;
   content?: string;
+  llm_config?: LLMConfig;
+  parser_spec?: ParserSpec;
+  bindings?: DataSourceBinding[];
 }
 
 export const listTemplates = async (): Promise<TemplateMeta[]> => {
