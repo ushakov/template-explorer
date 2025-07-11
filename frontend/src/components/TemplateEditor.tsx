@@ -1,13 +1,32 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useAppStore } from '../stores/appStore';
 
 const TemplateEditor: React.FC = () => {
   const { selectedTemplate, updateSelectedTemplate, unsavedTemplate, setUnsavedTemplate, createTemplate } = useAppStore();
 
-  const saveTemplate = () => {
-    updateSelectedTemplate(selectedTemplate?.name, unsavedTemplate);
-  };
+  const saveTemplate = useCallback(() => {
+    if (selectedTemplate?.name) {
+      updateSelectedTemplate(selectedTemplate.name, unsavedTemplate);
+    } else {
+      saveTemplateAs();
+    }
+  }, [selectedTemplate, unsavedTemplate, updateSelectedTemplate]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        saveTemplate();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [saveTemplate]);
 
   const saveTemplateAs = async () => {
     const newName = window.prompt("Enter new template name:");
