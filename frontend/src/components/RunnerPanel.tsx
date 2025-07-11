@@ -2,6 +2,27 @@ import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { PlayIcon } from '@heroicons/react/24/solid';
 
+const LLM_PROVIDERS = [
+  { label: 'OpenAI', value: 'openai' },
+  { label: 'Anthropic', value: 'anthropic' },
+]
+
+const LLM_MODELS = {
+  openai: [
+    { label: 'o4-mini', value: 'o4-mini' },
+    { label: 'gpt-4.1', value: 'gpt-4.1' },
+    { label: 'gpt-4.1-mini', value: 'gpt-4.1-mini' },
+    { label: 'gpt-4.1-nano', value: 'gpt-4.1-nano' },
+    { label: 'o3', value: 'o3' },
+  ],
+  anthropic: [
+    { label: 'claude-sonnet-4', value: 'claude-sonnet-4-20250514' },
+    { label: 'claude-3-7-sonnet', value: 'claude-3-7-sonnet-latest' },
+    { label: 'claude-3-5-haiku', value: 'claude-3-5-haiku-latest' },
+    { label: 'claude-opus-4', value: 'claude-opus-4-20250514' },
+  ],
+}
+
 const RunnerPanel: React.FC = () => {
   const { llmConfig, updateLlmConfig, parserSpec, updateParserSpec, runLlm, runBatchLlm, isRunningLlm, llmError } = useAppStore();
 
@@ -19,14 +40,24 @@ const RunnerPanel: React.FC = () => {
 
       <div className="form-control">
         <label className="label mx-2">
+          <span className="label-text">Provider</span>
+        </label>
+        <select className="select select-bordered mx-2 w-full" value={llmConfig.provider} onChange={(e) => updateLlmConfig({ provider: e.target.value as any })}>
+          {LLM_PROVIDERS.map((provider) => (
+            <option key={provider.value} value={provider.value}>{provider.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="form-control">
+        <label className="label mx-2">
           <span className="label-text">Model</span>
         </label>
-        <input
-          type="text"
-          className="input input-bordered mx-2 w-full"
-          value={llmConfig.model}
-          onChange={(e) => updateLlmConfig({ model: e.target.value })}
-        />
+        <select className="select select-bordered mx-2 w-full" value={llmConfig.model} onChange={(e) => updateLlmConfig({ model: e.target.value as any })}>
+          {LLM_MODELS[llmConfig.provider as keyof typeof LLM_MODELS].map((model) => (
+            <option key={model.value} value={model.value}>{model.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="form-control flex flex-row items-center">

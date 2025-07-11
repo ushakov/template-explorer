@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import jinja2
 
 from llama_index.llms.openai import OpenAI
+from llama_index.llms.anthropic import Anthropic
 from llama_index.core.prompts import PromptTemplate
 
 load_dotenv()
@@ -37,7 +38,7 @@ class TemplateMeta(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "openai"
+    provider: Literal["openai", "anthropic"] = "openai"
     model: str = "o4-mini"
     temperature: float = 0.7
 
@@ -404,7 +405,13 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
     prompt = template.render(context)
 
     # 4. Execute LLM & Parse
-    llm = OpenAI(model=request.llm.model, temperature=request.llm.temperature)
+    if request.llm.provider == "openai":
+        llm = OpenAI(model=request.llm.model, temperature=request.llm.temperature)
+    elif request.llm.provider == "anthropic":
+        llm = Anthropic(model=request.llm.model, temperature=request.llm.temperature)
+    else:
+        raise ValueError(f"Unsupported LLM provider: {request.llm.provider}")
+
     parser_spec = request.parser or ParserSpec()
 
     if parser_spec.type == "structured" and parser_spec.pydantic_model:
@@ -412,6 +419,7 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
             DynamicModel = create_model_from_string(parser_spec.pydantic_model)
             parsed_response = llm.structured_predict(DynamicModel, PromptTemplate(prompt))
             raw_response = str(parsed_response)
+            parsed_response = parsed_response.model_dump()
             # pydantic_parser = PydanticOutputParser(DynamicModel)
             # chain = QueryPipeline(chain=[("llm", llm), ("parser", pydantic_parser)])
             # parsed_response = chain.run(prompt=prompt)
@@ -430,7 +438,7 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
         raw_response = llm.complete(prompt).text
         parsed_response = raw_response
 
-    return {"raw_response": raw_response, "parsed_response": parsed_response.model_dump()}
+    return {"raw_response": raw_response, "parsed_response": parsed_response}
 
 def create_model_from_string(model_code: str) -> type[BaseModel]:
     """Dynamically creates a Pydantic model from a string of Python code."""
