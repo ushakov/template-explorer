@@ -5,6 +5,7 @@ import { PlayIcon } from '@heroicons/react/24/solid';
 const LLM_PROVIDERS = [
   { label: 'OpenAI', value: 'openai' },
   { label: 'Anthropic', value: 'anthropic' },
+  // { label: 'Google', value: 'google' },
 ]
 
 const LLM_MODELS = {
@@ -21,6 +22,11 @@ const LLM_MODELS = {
     { label: 'claude-3-5-haiku', value: 'claude-3-5-haiku-latest' },
     { label: 'claude-opus-4', value: 'claude-opus-4-20250514' },
   ],
+  // google: [
+  //   { label: 'gemini-2.5-flash', value: 'gemini-2.5-flash' },
+  //   { label: 'gemini-2.5-pro', value: 'gemini-2.5-pro' },
+  //   { label: 'gemini-2.0-flash', value: 'gemini-2.0-flash' },
+  // ],
 }
 
 const RunnerPanel: React.FC = () => {
@@ -42,7 +48,7 @@ const RunnerPanel: React.FC = () => {
         <label className="label mx-2">
           <span className="label-text">Provider</span>
         </label>
-        <select className="select select-bordered mx-2 w-full" value={llmConfig.provider} onChange={(e) => updateLlmConfig({ provider: e.target.value as any })}>
+        <select className="select select-bordered mx-2 w-full" value={llmConfig.provider} onChange={(e) => updateLlmConfig({ provider: e.target.value as any, model: LLM_MODELS[e.target.value as keyof typeof LLM_MODELS][0].value })}>
           {LLM_PROVIDERS.map((provider) => (
             <option key={provider.value} value={provider.value}>{provider.label}</option>
           ))}

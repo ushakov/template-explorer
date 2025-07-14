@@ -1,7 +1,7 @@
 import time
 import uuid
 import json
-from typing import List, Dict, Any, Literal
+from typing import List, Dict, Any, Literal, Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
@@ -11,6 +11,7 @@ import jinja2
 
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.core.prompts import PromptTemplate
 
 load_dotenv()
@@ -38,7 +39,7 @@ class TemplateMeta(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: Literal["openai", "anthropic"] = "openai"
+    provider: Literal["openai", "anthropic", "google"] = "openai"
     model: str = "o4-mini"
     temperature: float = 0.7
 
@@ -406,9 +407,11 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
 
     # 4. Execute LLM & Parse
     if request.llm.provider == "openai":
-        llm = OpenAI(model=request.llm.model, temperature=request.llm.temperature)
+        llm = OpenAI(model=request.llm.model, temperature=request.llm.temperature, timeout=180)
     elif request.llm.provider == "anthropic":
-        llm = Anthropic(model=request.llm.model, temperature=request.llm.temperature)
+        llm = Anthropic(model=request.llm.model, temperature=request.llm.temperature, max_tokens=8192, timeout=180)
+    elif request.llm.provider == "google":
+        llm = GoogleGenAI(model=request.llm.model, temperature=request.llm.temperature, timeout=180)
     else:
         raise ValueError(f"Unsupported LLM provider: {request.llm.provider}")
 
@@ -419,7 +422,10 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
             DynamicModel = create_model_from_string(parser_spec.pydantic_model)
             parsed_response = llm.structured_predict(DynamicModel, PromptTemplate(prompt))
             raw_response = str(parsed_response)
-            parsed_response = parsed_response.model_dump()
+            if isinstance(parsed_response, BaseModel):
+                parsed_response = parsed_response.model_dump(exclude_none=True)
+            else:
+                parsed_response = raw_response
             # pydantic_parser = PydanticOutputParser(DynamicModel)
             # chain = QueryPipeline(chain=[("llm", llm), ("parser", pydantic_parser)])
             # parsed_response = chain.run(prompt=prompt)
