@@ -18,8 +18,6 @@ const PromptPreview: React.FC = () => {
 
       setIsLoading(true);
       setError(null);
-      nunjucks.configure({ autoescape: false });
-
       try {
         var context: Record<string, unknown> = {};
 
@@ -49,7 +47,10 @@ const PromptPreview: React.FC = () => {
             context[contextKey] = contextValue;
           }
         }
-        const output = nunjucks.renderString(unsavedTemplate, context);
+        const nenv = new nunjucks.Environment(undefined, { autoescape: false });
+        nenv.addFilter('tojson', (value: any, indent: number = 0) => JSON.stringify(value, null, indent));
+
+        const output = nenv.renderString(unsavedTemplate, context);
         setRenderedContent(output);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'An unknown error occurred during rendering.');
