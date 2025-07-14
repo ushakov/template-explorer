@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { PlayIcon } from '@heroicons/react/24/solid';
+import Editor from '@monaco-editor/react';
 
 const LLM_PROVIDERS = [
   { label: 'OpenAI', value: 'openai' },
@@ -96,38 +97,32 @@ const RunnerPanel: React.FC = () => {
       </div>
 
       {parserSpec.type === 'structured' && (
-        <div className="form-control">
-          <label className="label"><span className="label-text">Pydantic Model</span></label>
-          <textarea
-            className="textarea textarea-bordered font-mono"
-            rows={4}
-            placeholder="from pydantic import BaseModel
-
-class MyModel(BaseModel):
-    name: str
-    value: int"
+        <div className="form-control flex flex-col gap-2">
+          <label className="label"><span className="label-text">Pydantic Model: A single pydantic class</span></label>
+          <Editor
+            theme="vs-dark"
+            language="python"
             value={parserSpec.pydantic_model || ''}
-            onChange={(e) => updateParserSpec({ pydantic_model: e.target.value })}
+            onChange={(value) => updateParserSpec({ pydantic_model: value })}
+            options={{ minimap: { enabled: false }}}
+            className='min-h-100'
           />
         </div>
       )}
 
       {parserSpec.type === 'python' && (
-        <div className="form-control">
-          <label className="label"><span className="label-text">Python Parser Function</span></label>
-          <textarea
-            className="textarea textarea-bordered font-mono"
-            rows={4}
-            placeholder="def parse(text: str):
-    # Your parsing logic here
-    return text.upper()"
+        <div className="form-control flex flex-col gap-2">
+          <label className="label"><span className="label-text">Python Function: <code>parse(str) -&gt; Any</code> function</span></label>
+          <Editor
+            theme="vs-dark"
+            language="python"
             value={parserSpec.python_code || ''}
-            onChange={(e) => updateParserSpec({ python_code: e.target.value })}
+            onChange={(value) => updateParserSpec({ python_code: value })}
+            options={{ minimap: { enabled: false }}}
+            className='min-h-100'
           />
         </div>
       )}
-
-      <div className="flex-grow"></div>
 
       {llmError && (
         <div role="alert" className="alert alert-error">
