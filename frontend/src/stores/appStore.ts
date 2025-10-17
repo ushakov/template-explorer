@@ -4,7 +4,7 @@ import * as datasetApi from '../api/datasets';
 import * as llmApi from '../api/llm';
 import type { Template, TemplateMeta } from '../api/templates';
 import type { DatasetMeta } from '../api/datasets';
-import type { LLMConfig, RunResponse, ParserSpec } from '../api/llm';
+import type { LLMConfig, RunResponse, ParserSpec, JobStatus } from '../api/llm';
 
 export interface DataSourceBinding {
     id: string; // Unique ID for React keys
@@ -38,6 +38,7 @@ interface AppState {
   isRunningLlm: boolean;
   llmError: string | null;
   jobId: string | null;
+  jobStatus: JobStatus | null;
 
   // Common
   isLoading: boolean;
@@ -68,7 +69,9 @@ interface AppState {
   updateParserSpec: (updates: Partial<ParserSpec>) => void;
   runLlm: () => Promise<void>;
   runBatchLlm: () => Promise<void>;
+  fetchJobStatus: (jobId: string) => Promise<void>;
   saveResults: (filename: string) => Promise<void>;
+  downloadResults: (jobId: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -85,6 +88,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoading: false,
   error: null,
   jobId: null,
+  jobStatus: null,
   unsavedTemplate: '',
 
   // Runner State
@@ -288,7 +292,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   runLlm: async () => {
-    const { unsavedTemplate, bindings, llmConfig, parserSpec } = get();
+    const { unsavedTemplate, bindings, llmConfig, parserSpec, selectedRecord } = get();
     if (!unsavedTemplate) return;
     set({ isRunningLlm: true, llmError: null, runResult: null, jobId: null });
     try {
@@ -297,6 +301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         datasource_bindings: bindings,
         llm: llmConfig,
         parser: parserSpec,
+        selected_record: selectedRecord,
       });
       if (result.error) {
         set({ llmError: result.error, isRunningLlm: false });
@@ -327,11 +332,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchJobStatus: async (jobId: string) => {
+    const status = await llmApi.getJobStatus(jobId);
+    set({ jobStatus: status });
+  },
+
   saveResults: async (filename: string) => {
     const { jobId } = get();
     if (!jobId) {
         throw new Error("No job to save.");
     }
     await llmApi.saveResults(jobId, filename);
+  },
+
+  downloadResults: async (jobId: string) => {
+    await llmApi.downloadResults(jobId);
   },
 }));

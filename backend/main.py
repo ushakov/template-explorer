@@ -1,10 +1,11 @@
 import time
 import uuid
 import json
-from typing import List, Dict, Any, Literal, Optional
+from typing import List, Dict, Any, Literal
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import jinja2
@@ -96,6 +97,7 @@ class RunRequest(BaseModel):
     datasource_bindings: list[DataSourceBinding]
     parser: ParserSpec | None = None
     llm: LLMConfig | None = None
+    selected_record: dict | str | None = None
 
 class RunResponse(BaseModel):
     raw_response: str
@@ -110,7 +112,7 @@ class BatchRunResponse(BaseModel):
     job_id: str
 
 class JobStatus(BaseModel):
-    status: str
+    status: Literal["running", "completed", "failed"]
     progress: float
     total: int
     error: str | None = None
@@ -123,13 +125,9 @@ class SaveResultsRequest(BaseModel):
     filename: str
 
 
-@app.get("/")
-async def read_root():
-    return {"message": "Welcome to Template Explorer"}
-
 # --- Template CRUD Endpoints ---
 
-@app.post("/templates", response_model=TemplateMeta)
+@app.post("/api/templates", response_model=TemplateMeta)
 async def create_template(template_in: TemplateCreate):
     """Creates a new template and saves it to the filesystem."""
     template_id = str(uuid.uuid4())
@@ -154,10 +152,11 @@ async def create_template(template_in: TemplateCreate):
 
     return TemplateMeta(id=template_id, name=template_name)
 
-@app.get("/templates", response_model=List[TemplateMeta])
+@app.get("/api/templates", response_model=List[TemplateMeta])
 async def list_templates():
     """Lists all available templates."""
     templates = []
+    print(TEMPLATES_DIR)
     for f in sorted(TEMPLATES_DIR.iterdir()):
         if f.is_file() and f.suffix == '.json':
             try:
@@ -169,7 +168,7 @@ async def list_templates():
     return templates
 
 # --- Dataset CRUD Endpoints ---
-@app.get("/datasets", response_model=List[DatasetMeta])
+@app.get("/api/datasets", response_model=List[DatasetMeta])
 async def list_datasets():
     """Lists all available datasets."""
     datasets = []
@@ -184,7 +183,7 @@ async def list_datasets():
                 continue
     return datasets
 
-@app.post("/datasets", response_model=DatasetMeta)
+@app.post("/api/datasets", response_model=DatasetMeta)
 async def create_dataset(file: UploadFile = File(...)):
     """Uploads a new dataset file."""
     if not file.filename:
@@ -248,7 +247,7 @@ def _load_dataset_file(file_path: Path) -> list[dict] | list[str]:
     return ret
 
 
-@app.get("/datasets/{dataset_id}", response_model=DatasetMeta)
+@app.get("/api/datasets/{dataset_id}", response_model=DatasetMeta)
 async def get_dataset(dataset_id: str):
     """Retrieves metadata for a single dataset."""
     file_path = _find_dataset_file(dataset_id)
@@ -260,7 +259,7 @@ async def get_dataset(dataset_id: str):
     data = _load_dataset_file(file_path)
     return DatasetMeta(id=dataset_id, name=dataset_name, file_format=file_format, num_records=len(data))
 
-@app.get("/datasets/{dataset_id}/records/{record_index}", response_model=dict | str)
+@app.get("/api/datasets/{dataset_id}/records/{record_index}", response_model=dict | str)
 async def get_dataset_record(dataset_id: str, record_index: int):
     """Retrieves a single record from a dataset."""
     file_path = _find_dataset_file(dataset_id)
@@ -273,7 +272,7 @@ async def get_dataset_record(dataset_id: str, record_index: int):
     raise HTTPException(status_code=404, detail="Record not found at that index.")
 
 
-@app.delete("/datasets/{dataset_id}", status_code=204)
+@app.delete("/api/datasets/{dataset_id}", status_code=204)
 async def delete_dataset(dataset_id: str):
     """Deletes a dataset from the filesystem."""
     file_path = _find_dataset_file(dataset_id)
@@ -294,7 +293,7 @@ def _find_template_file(template_id: str) -> Path | None:
             return f
     return None
 
-@app.get("/templates/{template_id}", response_model=Template)
+@app.get("/api/templates/{template_id}", response_model=Template)
 async def get_template(template_id: str):
     """Retrieves a full template, including content and metadata."""
     file_path = _find_template_file(template_id)
@@ -308,7 +307,7 @@ async def get_template(template_id: str):
     except (IOError, json.JSONDecodeError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to read or parse template file: {e}")
 
-@app.put("/templates/{template_id}", response_model=Template)
+@app.put("/api/templates/{template_id}", response_model=Template)
 async def update_template(template_id: str, template_in: TemplateUpdate):
     """Updates an existing template."""
     file_path = _find_template_file(template_id)
@@ -349,7 +348,7 @@ async def update_template(template_id: str, template_in: TemplateUpdate):
 
     return updated_template
 
-@app.delete("/templates/{template_id}", status_code=204)
+@app.delete("/api/templates/{template_id}", status_code=204)
 async def delete_template(template_id: str):
     """Deletes a template."""
     file_path = _find_template_file(template_id)
@@ -389,6 +388,8 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
         else: # record scope
             if record:
                 context_value = record
+            elif request.selected_record:
+                context_value = request.selected_record
             else:
                 # For a single run, we assume the first record is used for any 'record' scoped datasets
                 data = _load_dataset_file(dataset_file)
@@ -402,6 +403,7 @@ def execute_llm_run(request: RunRequest, record: Dict[str, Any] | None) -> Dict[
 
     # 3. Render Prompt
     jinja_env = jinja2.Environment()
+    jinja_env.filters['numlines'] = lambda value: '\n'.join([f"{i+1}: {line}" for i, line in enumerate(value.split('\n'))])
     template = jinja_env.from_string(template_content)
     prompt = template.render(context)
 
@@ -477,8 +479,7 @@ def execute_custom_python(code: str, text_input: str) -> Any:
     except Exception as e:
         raise ValueError(f"Error executing the 'parse' function: {e}")
 
-# Refactor /llm/run to use the new function
-@app.post("/llm/run", response_model=RunResponse)
+@app.post("/api/llm/run", response_model=RunResponse)
 async def run_llm(request: RunRequest):
     try:
         result = execute_llm_run(request, None)
@@ -521,29 +522,42 @@ def batch_process_task(job_id: str, request: BatchRunRequest):
         job_store[job_id]["error"] = str(e)
 
 
-@app.post("/llm/batch", response_model=BatchRunResponse)
+@app.post("/api/llm/batch", response_model=BatchRunResponse)
 async def run_batch(request: BatchRunRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
     background_tasks.add_task(batch_process_task, job_id, request)
     return BatchRunResponse(job_id=job_id)
 
-@app.get("/jobs/{job_id}/status", response_model=JobStatus)
+@app.get("/api/jobs/{job_id}/status", response_model=JobStatus)
 async def get_job_status(job_id: str):
     job = job_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return JobStatus(status=job["status"], progress=job["progress"], total=job["total"], error=job["error"])
 
-@app.get("/jobs/{job_id}/result", response_model=JobResult)
-async def get_job_result(job_id: str):
+@app.get("/api/jobs/{job_id}/results")
+async def get_job_results(job_id: str):
     job = job_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if job["status"] != "completed":
         raise HTTPException(status_code=400, detail="Job is not yet complete.")
-    return JobResult(results=job["results"])
 
-@app.post("/jobs/save")
+    # Create a JSONL string from the results
+    jsonl_content = ""
+    for item in job["results"]:
+        jsonl_content += json.dumps(item) + "\n"
+
+    # Return as downloadable file
+    return Response(
+        content=jsonl_content,
+        media_type="application/jsonl",
+        headers={
+            "Content-Disposition": f"attachment; filename=job_{job_id}.jsonl"
+        }
+    )
+
+@app.post("/api/jobs/save")
 async def save_job_results(request: SaveResultsRequest):
     job = job_store.get(request.job_id)
     if not job:
@@ -568,3 +582,9 @@ async def save_job_results(request: SaveResultsRequest):
         raise HTTPException(status_code=500, detail=f"Failed to save results to disk: {e}")
 
     return {"message": "Results saved successfully", "path": str(file_path)}
+
+app.mount(
+    "/",
+    StaticFiles(directory="../frontend/dist", html=True),
+    name="frontend_static",
+)

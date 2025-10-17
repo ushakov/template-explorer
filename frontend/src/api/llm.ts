@@ -21,7 +21,16 @@ export interface RunRequest {
     datasource_bindings: DataSourceBinding[];
     parser?: ParserSpec;
     llm?: LLMConfig;
+    selected_record?: Record<string, unknown> | string | null;
 }
+
+export interface JobStatus {
+    status: "running" | "completed" | "failed";
+    progress: number;
+    total: number;
+    error: string | null;
+}
+
 
 export interface BatchRunResponse {
     job_id: string;
@@ -45,4 +54,14 @@ export const runBatchLlm = async (request: RunRequest): Promise<BatchRunResponse
 
 export const saveResults = async (job_id: string, filename: string): Promise<void> => {
     await axios.post(`${API_URL}/jobs/save`, { job_id, filename });
+};
+
+export const getJobStatus = async (job_id: string): Promise<JobStatus> => {
+    const response = await axios.get<JobStatus>(`${API_URL}/jobs/${job_id}/status`);
+    return response.data;
+};
+
+export const downloadResults = async (job_id: string): Promise<void> => {
+    const response = await axios.get(`${API_URL}/jobs/${job_id}/results`);
+    return response.data;
 };

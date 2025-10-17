@@ -49,6 +49,7 @@ const PromptPreview: React.FC = () => {
         }
         const nenv = new nunjucks.Environment(undefined, { autoescape: false });
         nenv.addFilter('tojson', (value: any, indent: number = 0) => JSON.stringify(value, null, indent));
+        nenv.addFilter('numlines', (value: string) => value.split('\n').map((line, index) => `${index + 1}: ${line}`).join('\n'));
 
         const output = nenv.renderString(unsavedTemplate, context);
         setRenderedContent(output);

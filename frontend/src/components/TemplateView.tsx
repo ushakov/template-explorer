@@ -10,7 +10,9 @@ const TemplateView: React.FC = () => {
     selectTemplate,
     selectedTemplateId,
     createTemplate,
-    deleteSelectedTemplate
+    deleteSelectedTemplate,
+    unsavedTemplate,
+    selectedTemplate,
   } = useAppStore();
 
   useEffect(() => {
@@ -18,6 +20,16 @@ const TemplateView: React.FC = () => {
   }, [fetchTemplates]);
 
   const handleCreate = async () => {
+    // Warn the user if there are unsaved changes in the current template
+    const hasUnsavedChanges = selectedTemplate
+      ? unsavedTemplate !== selectedTemplate.content
+      : unsavedTemplate.trim() !== '';
+
+    if (hasUnsavedChanges) {
+      const proceed = window.confirm('You have unsaved changes. Creating a new template will discard them. Continue?');
+      if (!proceed) return;
+    }
+
     const name = prompt('Enter new template name:');
     if (name) {
       toast.promise(createTemplate(name, `Hello, {{name}}!`), {
@@ -39,6 +51,22 @@ const TemplateView: React.FC = () => {
     }
   };
 
+  // Handle selecting a different template, ensuring the user does not lose unsaved changes
+  const handleSelect = (id: string) => {
+    if (id === selectedTemplateId) return; // already selected
+
+    const hasUnsavedChanges = selectedTemplate
+      ? unsavedTemplate !== selectedTemplate.content
+      : unsavedTemplate.trim() !== '';
+
+    if (hasUnsavedChanges) {
+      const proceed = window.confirm('You have unsaved changes. Switching templates will discard them. Continue?');
+      if (!proceed) return;
+    }
+
+    selectTemplate(id);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3 flex-none">
@@ -51,7 +79,7 @@ const TemplateView: React.FC = () => {
       <ul className="menu bg-base-300 rounded-box flex-grow overflow-auto w-full">
         {templates.map((t) => (
           <li key={t.id} className={selectedTemplateId === t.id ? 'bordered' : ''}>
-            <a onClick={() => selectTemplate(t.id)} className='flex flex-row justify-between'>
+            <a onClick={() => handleSelect(t.id)} className='flex flex-row justify-between'>
               <span className="flex-1">{t.name}</span>
               {selectedTemplateId === t.id && (
                 <button className="btn btn-ghost btn-xs" onClick={handleDelete}>

@@ -1,0 +1,16 @@
+.env
+.envrc
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+*.pyc
+*.pyo
+__pycache__/
+
+# Editor directories and files
+.vscode/*
+.DS_Store
+
+backend/template-explorer/
