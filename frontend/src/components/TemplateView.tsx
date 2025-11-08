@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { TrashIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -67,6 +67,8 @@ const TemplateView: React.FC = () => {
     selectTemplate(id);
   };
 
+  const sortedTemplates = useMemo(() => templates.sort((a, b) => a.name.localeCompare(b.name)), [templates]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3 flex-none">
@@ -77,7 +79,7 @@ const TemplateView: React.FC = () => {
           </button>
       </div>
       <ul className="menu bg-base-300 rounded-box flex-grow overflow-auto w-full">
-        {templates.map((t) => (
+        {sortedTemplates.map((t) => (
           <li key={t.id} className={selectedTemplateId === t.id ? 'bordered' : ''}>
             <a onClick={() => handleSelect(t.id)} className='flex flex-row justify-between'>
               <span className="flex-1">{t.name}</span>
@@ -89,7 +91,7 @@ const TemplateView: React.FC = () => {
             </a>
           </li>
         ))}
-        {templates.length === 0 && (
+        {sortedTemplates.length === 0 && (
             <li className="text-center text-base-content/60 p-4">No templates found.</li>
         )}
       </ul>

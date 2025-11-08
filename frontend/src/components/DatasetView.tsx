@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
@@ -57,6 +57,8 @@ const DatasetView: React.FC = () => {
     }
   }
 
+  const sortedDatasets = useMemo(() => datasets.sort((a, b) => a.name.localeCompare(b.name)), [datasets]);
+
   return (
     <div className="flex flex-col flex-1">
       <h2 className="text-lg font-bold mb-3 flex-none">Datasets</h2>
@@ -70,7 +72,7 @@ const DatasetView: React.FC = () => {
         />
       </div>
       <ul className="menu bg-base-300 rounded-box my-4 flex-grow overflow-auto w-full">
-        {datasets.map((ds) => (
+        {sortedDatasets.map((ds) => (
           <li key={ds.id} className={selectedDatasetId === ds.id ? 'bordered' : ''}>
             <a onClick={() => handleSelect(ds.id)}>
               <span className="flex-1">{ds.name}</span>
@@ -81,7 +83,7 @@ const DatasetView: React.FC = () => {
             </a>
           </li>
         ))}
-        {datasets.length === 0 && (
+        {sortedDatasets.length === 0 && (
             <li className="text-center text-base-content/60 p-4">No datasets found.</li>
         )}
       </ul>
