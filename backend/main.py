@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 import json
@@ -15,11 +16,23 @@ from llama_index.llms.anthropic import Anthropic
 from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.core.prompts import PromptTemplate
 
-load_dotenv()
-
 app = FastAPI(title="Template Explorer API")
 
-STORAGE_ROOT = Path("template-explorer/storage")
+
+def _resolve_workspace_root() -> Path:
+    env_value = os.getenv("WORKSPACE")
+    if env_value:
+        return Path(env_value).expanduser().resolve()
+    backend_dir = Path(__file__).resolve().parent
+    return (backend_dir / "workspace").resolve()
+
+
+STORAGE_ROOT = _resolve_workspace_root()
+STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+
+# Load workspace-specific environment variables (e.g., API keys)
+load_dotenv(dotenv_path=STORAGE_ROOT / ".env", override=True)
+
 TEMPLATES_DIR = STORAGE_ROOT / "templates"
 DATASETS_DIR = STORAGE_ROOT / "datasets"
 RESULTS_DIR = STORAGE_ROOT / "results"
